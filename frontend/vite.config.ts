@@ -26,8 +26,7 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          vendor: ['vue', 'vue-router', 'pinia'],
-          socket: ['socket.io-client']
+          vendor: ['vue', 'vue-router', 'pinia']
         }
       }
     }

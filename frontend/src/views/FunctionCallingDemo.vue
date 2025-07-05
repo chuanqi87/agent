@@ -27,54 +27,40 @@
       <div class="w-1/3 bg-white border-r p-6 overflow-y-auto">
         <h2 class="text-lg font-semibold mb-4">可用工具</h2>
         
-        <!-- 天气工具 -->
-        <div class="border rounded-lg p-4 mb-4">
+        <!-- 动态显示工具 -->
+        <div 
+          v-for="tool in availableTools" 
+          :key="tool.function.name"
+          class="border rounded-lg p-4 mb-4"
+        >
           <div class="flex items-center mb-2">
             <input 
               type="checkbox" 
-              id="weather-tool" 
-              v-model="enabledTools.weather"
+              :id="`tool-${tool.function.name}`"
+              v-model="enabledToolsMap[tool.function.name]"
               class="mr-2"
             >
-            <label for="weather-tool" class="font-medium">🌤️ 天气查询</label>
+            <label :for="`tool-${tool.function.name}`" class="font-medium">
+              {{ getToolIcon(tool.function.name) }} {{ getToolDisplayName(tool.function.name) }}
+            </label>
           </div>
-          <p class="text-sm text-gray-600 mb-2">获取指定城市的天气信息</p>
+          <p class="text-sm text-gray-600 mb-2">{{ tool.function.description }}</p>
           <div class="text-xs text-gray-500 bg-gray-50 p-2 rounded font-mono">
-            get_weather(city: string, unit?: string)
+            {{ formatToolSignature(tool) }}
           </div>
         </div>
 
-        <!-- 计算器工具 -->
-        <div class="border rounded-lg p-4 mb-4">
-          <div class="flex items-center mb-2">
-            <input 
-              type="checkbox" 
-              id="calculator-tool" 
-              v-model="enabledTools.calculator"
-              class="mr-2"
-            >
-            <label for="calculator-tool" class="font-medium">🧮 计算器</label>
-          </div>
-          <p class="text-sm text-gray-600 mb-2">执行数学计算</p>
-          <div class="text-xs text-gray-500 bg-gray-50 p-2 rounded font-mono">
-            calculate(expression: string)
-          </div>
-        </div>
-
-        <!-- 时间工具 -->
-        <div class="border rounded-lg p-4 mb-4">
-          <div class="flex items-center mb-2">
-            <input 
-              type="checkbox" 
-              id="time-tool" 
-              v-model="enabledTools.time"
-              class="mr-2"
-            >
-            <label for="time-tool" class="font-medium">⏰ 时间查询</label>
-          </div>
-          <p class="text-sm text-gray-600 mb-2">获取当前时间或时区信息</p>
-          <div class="text-xs text-gray-500 bg-gray-50 p-2 rounded font-mono">
-            get_time(timezone?: string)
+        <!-- 工具统计 -->
+        <div class="mt-6 p-4 bg-gray-50 rounded-lg">
+          <div class="text-sm text-gray-600">
+            <div class="flex justify-between mb-1">
+              <span>总工具数：</span>
+              <span class="font-medium">{{ availableTools.length }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span>已启用：</span>
+              <span class="font-medium text-green-600">{{ enabledToolsCount }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -94,6 +80,8 @@
                 <li>"北京今天天气怎么样？"</li>
                 <li>"计算 15 * 8 + 23"</li>
                 <li>"现在几点了？"</li>
+                <li>"生成一个1到100之间的随机数"</li>
+                <li>"生成一个UUID"</li>
               </ul>
             </div>
           </div>
@@ -186,7 +174,7 @@
           
           <!-- 启用的工具数量显示 -->
           <div class="mt-2 text-xs text-gray-500">
-            已启用 {{ enabledToolsCount }} 个工具
+            已启用 {{ enabledToolsCount }} / {{ availableTools.length }} 个工具
           </div>
         </footer>
       </div>
@@ -212,203 +200,81 @@ interface Message {
 }
 
 const apiStore = useApiStore()
-const { connect, disconnect, sendMessageWithTools } = apiStore
+const { connect, disconnect, sendMessageWithTools, getAvailableTools, executeToolCall } = apiStore
 
 const messages = ref<Message[]>([])
 const inputMessage = ref('')
 const chatContainer = ref<HTMLElement>()
 
-// 工具启用状态
-const enabledTools = ref({
-  weather: true,
-  calculator: true,
-  time: true
+// 获取可用工具
+const availableTools = computed(() => {
+  return getAvailableTools()
 })
+
+// 工具启用状态映射
+const enabledToolsMap = ref<Record<string, boolean>>({})
+
+// 初始化工具启用状态
+const initializeToolsState = () => {
+  const tools = getAvailableTools()
+  const newMap: Record<string, boolean> = {}
+  tools.forEach(tool => {
+    newMap[tool.function.name] = true // 默认启用所有工具
+  })
+  enabledToolsMap.value = newMap
+}
 
 // 计算启用的工具数量
 const enabledToolsCount = computed(() => {
-  return Object.values(enabledTools.value).filter(Boolean).length
+  return Object.values(enabledToolsMap.value).filter(Boolean).length
 })
 
-// 构建工具列表
-const buildTools = () => {
-  const tools = []
-  
-  if (enabledTools.value.weather) {
-    tools.push({
-      type: "function",
-      function: {
-        name: "get_weather",
-        description: "获取指定城市的天气信息",
-        parameters: {
-          type: "object",
-          properties: {
-            city: {
-              type: "string",
-              description: "城市名称，例如：北京、上海"
-            },
-            unit: {
-              type: "string",
-              enum: ["celsius", "fahrenheit"],
-              description: "温度单位，默认摄氏度"
-            }
-          },
-          required: ["city"]
-        }
-      }
-    })
+// 获取工具图标
+const getToolIcon = (toolName: string): string => {
+  const iconMap: Record<string, string> = {
+    'get_weather': '🌤️',
+    'calculate': '🧮',
+    'get_current_time': '⏰',
+    'calculate_time': '📅',
+    'generate_random': '🎲',
+    'generate_uuid': '🔑'
   }
-  
-  if (enabledTools.value.calculator) {
-    tools.push({
-      type: "function",
-      function: {
-        name: "calculate",
-        description: "执行数学计算",
-        parameters: {
-          type: "object",
-          properties: {
-            expression: {
-              type: "string",
-              description: "要计算的数学表达式，例如：2+3*4"
-            }
-          },
-          required: ["expression"]
-        }
-      }
-    })
-  }
-  
-  if (enabledTools.value.time) {
-    tools.push({
-      type: "function",
-      function: {
-        name: "get_time",
-        description: "获取当前时间或指定时区的时间",
-        parameters: {
-          type: "object",
-          properties: {
-            timezone: {
-              type: "string",
-              description: "时区名称，例如：Asia/Shanghai, America/New_York"
-            }
-          }
-        }
-      }
-    })
-  }
-  
-  return tools
+  return iconMap[toolName] || '🔧'
 }
 
-// 工具执行函数
-const executeToolCall = async (toolCall: any): Promise<string> => {
-  const { name, arguments: args } = toolCall.function
-  
-  try {
-    const parsedArgs = JSON.parse(args)
-    
-    switch (name) {
-      case 'get_weather':
-        return await executeWeatherTool(parsedArgs)
-      case 'calculate':
-        return await executeCalculatorTool(parsedArgs)
-      case 'get_time':
-        return await executeTimeTool(parsedArgs)
-      default:
-        return `未知工具: ${name}`
-    }
-  } catch (error) {
-    return `工具执行错误: ${error instanceof Error ? error.message : '未知错误'}`
+// 获取工具显示名称
+const getToolDisplayName = (toolName: string): string => {
+  const nameMap: Record<string, string> = {
+    'get_weather': '天气查询',
+    'calculate': '计算器',
+    'get_current_time': '时间查询',
+    'calculate_time': '时间计算',
+    'generate_random': '随机数生成',
+    'generate_uuid': 'UUID生成'
   }
+  return nameMap[toolName] || toolName
 }
 
-// 天气工具执行
-const executeWeatherTool = async (args: { city: string, unit?: string }): Promise<string> => {
-  const { city, unit = 'celsius' } = args
-  
-  // 模拟天气API调用
-  const weatherData = {
-    '北京': { temp: 15, desc: '晴天', humidity: 45 },
-    '上海': { temp: 18, desc: '多云', humidity: 60 },
-    '广州': { temp: 25, desc: '小雨', humidity: 80 },
-    '深圳': { temp: 26, desc: '晴天', humidity: 55 },
-    '杭州': { temp: 20, desc: '阴天', humidity: 70 }
+// 格式化工具签名
+const formatToolSignature = (tool: any): string => {
+  const { name, parameters } = tool.function
+  if (!parameters || !parameters.properties) {
+    return `${name}()`
   }
   
-  const defaultWeather = { temp: 22, desc: '晴天', humidity: 50 }
-  const weather = weatherData[city as keyof typeof weatherData] || defaultWeather
+  const params = Object.entries(parameters.properties).map(([key, value]: [string, any]) => {
+    const required = parameters.required?.includes(key)
+    const optional = required ? '' : '?'
+    return `${key}${optional}: ${value.type}`
+  }).join(', ')
   
-  const tempUnit = unit === 'fahrenheit' ? '°F' : '°C'
-  const temp = unit === 'fahrenheit' ? Math.round(weather.temp * 9/5 + 32) : weather.temp
-  
-  return JSON.stringify({
-    city,
-    temperature: `${temp}${tempUnit}`,
-    description: weather.desc,
-    humidity: `${weather.humidity}%`,
-    timestamp: new Date().toISOString()
-  })
+  return `${name}(${params})`
 }
 
-// 计算器工具执行
-const executeCalculatorTool = async (args: { expression: string }): Promise<string> => {
-  const { expression } = args
-  
-  try {
-    // 安全的数学表达式计算 (仅支持基本运算)
-    const sanitized = expression.replace(/[^0-9+\-*/().\s]/g, '')
-    
-    if (sanitized !== expression) {
-      throw new Error('表达式包含不支持的字符')
-    }
-    
-    // 使用 Function 构造器安全计算
-    const result = new Function('return ' + sanitized)()
-    
-    if (typeof result !== 'number' || !isFinite(result)) {
-      throw new Error('计算结果无效')
-    }
-    
-    return JSON.stringify({
-      expression,
-      result,
-      timestamp: new Date().toISOString()
-    })
-  } catch (error) {
-    throw new Error(`计算失败: ${error instanceof Error ? error.message : '未知错误'}`)
-  }
-}
-
-// 时间工具执行
-const executeTimeTool = async (args: { timezone?: string }): Promise<string> => {
-  const { timezone = 'Asia/Shanghai' } = args
-  
-  try {
-    const now = new Date()
-    const options: Intl.DateTimeFormatOptions = {
-      timeZone: timezone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      weekday: 'long'
-    }
-    
-    const formatter = new Intl.DateTimeFormat('zh-CN', options)
-    const timeString = formatter.format(now)
-    
-    return JSON.stringify({
-      timezone,
-      current_time: timeString,
-      iso_time: now.toISOString(),
-      timestamp: Date.now()
-    })
-  } catch (error) {
-    throw new Error(`时间获取失败: ${error instanceof Error ? error.message : '未知错误'}`)
-  }
+// 构建启用的工具列表
+const buildEnabledTools = () => {
+  const allTools = getAvailableTools()
+  return allTools.filter(tool => enabledToolsMap.value[tool.function.name])
 }
 
 const sendMessage = async () => {
@@ -432,7 +298,7 @@ const sendMessage = async () => {
 
   try {
     // 构建工具列表
-    const tools = buildTools()
+    const tools = buildEnabledTools()
     
     // 构建完整的对话历史 (包括工具调用)
     const conversationHistory: any[] = []
@@ -579,6 +445,8 @@ const scrollToBottom = () => {
 
 onMounted(async () => {
   await connect()
+  // 初始化工具状态
+  initializeToolsState()
 })
 
 onUnmounted(() => {

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { toolManager } from '../tools'
 
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system' | 'tool'
@@ -29,14 +30,8 @@ interface ChatResponse {
   }
 }
 
-interface Tool {
-  type: string
-  function: {
-    name: string
-    description?: string
-    parameters?: any
-  }
-}
+// 使用工具系统的Tool接口
+import type { Tool } from '../utils/tools'
 
 export const useApiStore = defineStore('api', () => {
   const isConnected = ref(false)
@@ -260,10 +255,22 @@ export const useApiStore = defineStore('api', () => {
   // 初始化连接检查
   const connect = async () => {
     console.log('🔗 开始初始化连接...')
+    // 初始化工具系统
+    toolManager.init()
     const result = await checkConnection()
     console.log('🔗 初始连接结果:', result, 'isConnected:', isConnected.value)
     // 定期检查连接状态
     setInterval(checkConnection, 30000) // 每30秒检查一次
+  }
+
+  // 获取所有可用的工具
+  const getAvailableTools = (): Tool[] => {
+    return toolManager.getEnabledTools()
+  }
+
+  // 执行工具调用
+  const executeToolCall = async (toolCall: any): Promise<string> => {
+    return await toolManager.executeToolCall(toolCall)
   }
 
   const disconnect = () => {
@@ -336,6 +343,8 @@ export const useApiStore = defineStore('api', () => {
     sendMessageStream,
     getModels,
     checkConnection,
-    sendMessageWithTools
+    sendMessageWithTools,
+    getAvailableTools,
+    executeToolCall
   }
 }) 
