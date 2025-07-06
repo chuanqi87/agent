@@ -10,13 +10,13 @@ from langchain_core.tools import tool
 
 
 @tool
-def generate_random(min_val: int, max_val: int, count: int = 1) -> str:
+def generate_random(count: int = 1, min_val: int = 1, max_val: int = 100) -> str:
     """生成随机数
     
     Args:
-        min_val: 最小值
-        max_val: 最大值
-        count: 生成数量
+        count: 生成数量（默认1个）
+        min_val: 最小值（默认1）
+        max_val: 最大值（默认100）
     """
     try:
         if count > 10:

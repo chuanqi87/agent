@@ -2,25 +2,26 @@
 import { toolRegistry, executeToolCall } from '../utils/tools'
 
 // 导入所有工具
-import { weatherTool } from './weather'
-import { calculatorTool } from './calculator'
-import { datetimeTool, timeCalculatorTool } from './datetime'
-import { randomTool, uuidTool } from './random'
+
+import { localStorageTool, sessionStorageTool } from './storage'
+import { clipboardTool } from './clipboard'
+import { browserInfoTool } from './browser'
+import { textProcessorTool } from './text'
+import { notificationTool } from './notification'
 
 // 注册所有工具
 export function registerAllTools() {
-  // 基础工具
-  toolRegistry.register(weatherTool)
-  toolRegistry.register(calculatorTool)
-  toolRegistry.register(datetimeTool)
-  toolRegistry.register(timeCalculatorTool)
-  
-  // 实用工具
-  toolRegistry.register(randomTool)
-  toolRegistry.register(uuidTool)
-  
-  console.log(`🚀 工具注册完成，共注册 ${toolRegistry.getToolCount()} 个工具`)
-  console.log(`📝 已注册的工具：${toolRegistry.getAllToolNames().join(', ')}`)
+  // 前端特色工具 - 充分利用浏览器API
+  toolRegistry.register(localStorageTool)     // 本地存储操作
+  toolRegistry.register(sessionStorageTool)   // 会话存储操作
+  toolRegistry.register(clipboardTool)        // 剪贴板操作
+  toolRegistry.register(browserInfoTool)      // 浏览器信息
+  toolRegistry.register(textProcessorTool)    // 文本处理
+  toolRegistry.register(notificationTool)     // 浏览器通知
+
+  console.log(`🚀 前端工具注册完成，共注册 ${toolRegistry.getToolCount()} 个工具`)
+  console.log(`📝 已注册的前端工具：${toolRegistry.getAllToolNames().join(', ')}`)
+  console.log(`🌟 前端工具特色：浏览器API + 客户端处理 + 用户交互`)
 }
 
 // 工具管理器 - 符合OpenAI标准
