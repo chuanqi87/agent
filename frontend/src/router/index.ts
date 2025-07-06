@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Chat from '../views/Chat.vue'
-import FunctionCallingDemo from '../views/FunctionCallingDemo.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -9,11 +8,6 @@ const router = createRouter({
       path: '/',
       name: 'chat',
       component: Chat
-    },
-    {
-      path: '/function-calling',
-      name: 'function-calling',
-      component: FunctionCallingDemo
     }
   ]
 })

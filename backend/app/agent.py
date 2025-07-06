@@ -243,6 +243,9 @@ class ChatAgent:
         except Exception as e:
             error_msg = f"❌ Function Calling {self.model_config['provider'].upper()} 处理失败: {str(e)}"
             print(error_msg)
+            # 如果是JSON解析错误，提供更详细的错误信息
+            if "Expecting value" in str(e):
+                print(f"💡 提示: 这可能是临时的API响应问题，请重试")
             raise e
     
     async def process_message_with_chain(self, user_message: str) -> str:

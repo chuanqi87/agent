@@ -61,6 +61,50 @@ export const useApiStore = defineStore('api', () => {
     }
   }
 
+
+
+  // 发送消息到AI (非流式，保持兼容性)
+  const sendMessage = async (message: string, conversationHistory: ChatMessage[] = []) => {
+    if (isThinking.value) return null
+
+    try {
+      isThinking.value = true
+
+      // 构建消息历史
+      const messages: ChatMessage[] = [
+        ...conversationHistory,
+        { role: 'user', content: message }
+      ]
+
+      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'deepseek-chat',
+          messages: messages,
+          temperature: 0.7,
+          max_tokens: 2000,
+          stream: false
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP错误: ${response.status}`)
+      }
+
+      const data: ChatResponse = await response.json()
+      return data.choices[0]?.message?.content || '抱歉，我没有收到有效的回复。'
+
+    } catch (error) {
+      console.error('发送消息失败:', error)
+      throw new Error(error instanceof Error ? error.message : '发送消息失败')
+    } finally {
+      isThinking.value = false
+    }
+  }
+
   // 使用SSE流式发送消息
   const sendMessageStream = (
     message: string, 
@@ -123,7 +167,6 @@ export const useApiStore = defineStore('api', () => {
 
             // 解码新数据并添加到缓冲区
             const chunk = decoder.decode(value, { stream: true })
-            // console.log('📥 收到原始数据块:', chunk)  // 注释掉减少日志
             buffer += chunk
             
             // 处理完整的行
@@ -132,11 +175,9 @@ export const useApiStore = defineStore('api', () => {
 
             for (const line of lines) {
               const trimmedLine = line.trim()
-              // console.log('🔍 处理行:', trimmedLine)  // 注释掉减少日志
               
               if (trimmedLine.startsWith('data: ')) {
                 const data = trimmedLine.slice(6).trim()
-                // console.log('📝 SSE数据:', data)  // 注释掉减少日志
                 
                 if (data === '[DONE]') {
                   console.log('✅ SSE消息完成')
@@ -152,7 +193,6 @@ export const useApiStore = defineStore('api', () => {
 
                 try {
                   const parsed = JSON.parse(data)
-                  // console.log('📋 解析后的数据:', parsed)  // 注释掉减少日志
                   
                   const choice = parsed.choices?.[0]
                   const delta = choice?.delta
@@ -160,11 +200,7 @@ export const useApiStore = defineStore('api', () => {
                   const finishReason = choice?.finish_reason
                   
                   if (content) {
-                    console.log('✏️ 内容片段:', content)
                     onChunk(content)
-                  } else if (delta?.role) {
-                    console.log('👤 角色信息:', delta.role)
-                    // 开始消息，不需要显示
                   }
                   
                   // 检查是否完成
@@ -194,62 +230,6 @@ export const useApiStore = defineStore('api', () => {
       isThinking.value = false
       onError(error instanceof Error ? error.message : 'SSE请求失败')
     })
-  }
-
-  // 发送消息到AI (非流式，保持兼容性)
-  const sendMessage = async (message: string, conversationHistory: ChatMessage[] = []) => {
-    if (isThinking.value) return null
-
-    try {
-      isThinking.value = true
-
-      // 构建消息历史
-      const messages: ChatMessage[] = [
-        ...conversationHistory,
-        { role: 'user', content: message }
-      ]
-
-      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'deepseek-chat',
-          messages: messages,
-          temperature: 0.7,
-          max_tokens: 2000,
-          stream: false
-        })
-      })
-
-      if (!response.ok) {
-        throw new Error(`HTTP错误: ${response.status}`)
-      }
-
-      const data: ChatResponse = await response.json()
-      return data.choices[0]?.message?.content || '抱歉，我没有收到有效的回复。'
-
-    } catch (error) {
-      console.error('发送消息失败:', error)
-      throw new Error(error instanceof Error ? error.message : '发送消息失败')
-    } finally {
-      isThinking.value = false
-    }
-  }
-
-  // 获取可用模型
-  const getModels = async () => {
-    try {
-      const response = await fetch(`${baseUrl}/v1/models`)
-      if (!response.ok) {
-        throw new Error(`HTTP错误: ${response.status}`)
-      }
-      return await response.json()
-    } catch (error) {
-      console.error('获取模型列表失败:', error)
-      throw error
-    }
   }
 
   // 初始化连接检查
@@ -341,7 +321,6 @@ export const useApiStore = defineStore('api', () => {
     disconnect,
     sendMessage,
     sendMessageStream,
-    getModels,
     checkConnection,
     sendMessageWithTools,
     getAvailableTools,

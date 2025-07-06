@@ -9,7 +9,6 @@
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix --ignore-path .gitignore"
   },
   "dependencies": {
-    "@heroicons/vue": "^2.0.18",
     "@types/marked": "^5.0.2",
     "highlight.js": "^11.11.1",
     "marked": "^16.0.0",
