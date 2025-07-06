@@ -31,12 +31,12 @@ class Settings(BaseSettings):
     APP_PORT: int = 8000
     DEBUG: bool = True
     
-    # CORS配置
-    FRONTEND_URL: str = "http://localhost:5173"
+
     
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"  # 忽略额外的环境变量
     
     def get_active_model_config(self) -> dict:
         """根据MODEL_PROVIDER返回当前激活的模型配置"""

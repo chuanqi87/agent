@@ -1,5 +1,5 @@
-// 工具注册器 - 统一管理所有工具
-import { toolRegistry } from '../utils/tools'
+// 工具注册器 - 统一管理所有工具，符合OpenAI标准
+import { toolRegistry, executeToolCall } from '../utils/tools'
 
 // 导入所有工具
 import { weatherTool } from './weather'
@@ -23,7 +23,7 @@ export function registerAllTools() {
   console.log(`📝 已注册的工具：${toolRegistry.getAllToolNames().join(', ')}`)
 }
 
-// 工具管理器
+// 工具管理器 - 符合OpenAI标准
 export class ToolManager {
   private static instance: ToolManager
   private initialized = false
@@ -49,24 +49,24 @@ export class ToolManager {
     console.log('✅ 工具系统初始化完成')
   }
   
-  // 获取所有启用的工具
+  // 获取所有启用的工具（OpenAI格式）
   getEnabledTools() {
     return toolRegistry.getEnabledTools()
   }
   
-  // 执行工具调用
-  async executeToolCall(toolCall: any) {
-    const { name, arguments: args } = toolCall.function
-    
-    try {
-      const parsedArgs = JSON.parse(args)
-      return await toolRegistry.execute(name, parsedArgs)
-    } catch (error) {
-      return `工具执行错误: ${error instanceof Error ? error.message : '未知错误'}`
+  // 执行工具调用（OpenAI格式）
+  async executeToolCall(toolCall: {
+    id: string
+    type: 'function'
+    function: {
+      name: string
+      arguments: string
     }
+  }) {
+    return await executeToolCall(toolCall)
   }
   
-  // 检查工具是否存在
+  // 检查工具是否存在且启用
   hasToolEnabled(name: string): boolean {
     const tool = toolRegistry.get(name)
     return tool ? (!tool.isEnabled || tool.isEnabled()) : false
@@ -80,9 +80,9 @@ export class ToolManager {
     }
     
     return {
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.parameters,
+      name: tool.definition.name,
+      description: tool.definition.description,
+      parameters: tool.definition.parameters,
       enabled: !tool.isEnabled || tool.isEnabled()
     }
   }
@@ -91,10 +91,28 @@ export class ToolManager {
   getAllToolsInfo() {
     return toolRegistry.getAllToolNames().map(name => this.getToolInfo(name))
   }
+  
+  // 获取工具定义（用于显示）
+  getToolDefinitions() {
+    return toolRegistry.getAllToolNames().map(name => {
+      const tool = toolRegistry.get(name)
+      return tool ? tool.definition : null
+    }).filter(Boolean)
+  }
+  
+  // 重置工具系统
+  reset() {
+    toolRegistry.clear()
+    this.initialized = false
+    console.log('🧹 工具系统已重置')
+  }
 }
 
 // 导出工具管理器实例
 export const toolManager = ToolManager.getInstance()
 
 // 导出工具注册表（用于高级用法）
-export { toolRegistry } from '../utils/tools' 
+export { toolRegistry } from '../utils/tools'
+
+// 导出工具执行函数
+export { executeToolCall } from '../utils/tools' 

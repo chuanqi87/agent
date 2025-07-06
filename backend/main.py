@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os
-import asyncio
 from dotenv import load_dotenv
 
 # 加载环境变量

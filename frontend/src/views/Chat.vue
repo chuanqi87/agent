@@ -8,6 +8,15 @@
           AI Agent 智能助手
         </h2>
         <div class="flex items-center space-x-4">
+          <!-- API配置按钮 -->
+          <button
+            @click="showApiConfig = !showApiConfig"
+            class="flex items-center space-x-2 px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm"
+          >
+            <span class="text-lg">⚙️</span>
+            <span>配置</span>
+          </button>
+          
           <!-- 工具面板切换按钮 -->
           <button
             @click="showToolsPanel = !showToolsPanel"
@@ -30,6 +39,57 @@
             </span>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- API配置面板 -->
+    <div v-if="showApiConfig" class="bg-white border-b px-6 py-4 shadow-sm">
+      <h3 class="text-sm font-semibold text-gray-700 mb-3">🔧 API 配置</h3>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">API Base URL</label>
+          <input
+            v-model="tempApiConfig.baseURL"
+            type="text"
+            placeholder="http://localhost:8000/v1"
+            class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">模型名称</label>
+          <input
+            v-model="tempApiConfig.model"
+            type="text"
+            placeholder="deepseek-chat"
+            class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">API Key (可选)</label>
+          <input
+            v-model="tempApiConfig.apiKey"
+            type="password"
+            placeholder="sk-xxx..."
+            class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+      </div>
+      <div class="mt-3 flex items-center space-x-3">
+        <button
+          @click="updateApiConfig"
+          class="px-4 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+        >
+          应用配置
+        </button>
+        <button
+          @click="resetApiConfig"
+          class="px-4 py-2 text-sm bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+        >
+          重置默认
+        </button>
+        <span class="text-xs text-gray-500">
+          当前: {{ apiStore.apiConfig.baseURL }}
+        </span>
       </div>
     </div>
 
@@ -235,12 +295,20 @@ interface Message {
 }
 
 const apiStore = useApiStore()
-const { connect, disconnect, sendMessageWithTools, sendMessageStream, getAvailableTools, executeToolCall } = apiStore
+const { connect, disconnect, getAvailableTools, executeToolCall } = apiStore
 
 const messages = ref<Message[]>([])
 const inputMessage = ref('')
 const chatContainer = ref<HTMLElement>()
 const showToolsPanel = ref(false)
+const showApiConfig = ref(false)
+
+// API配置相关
+const tempApiConfig = ref({
+  baseURL: 'http://localhost:8000/v1',
+  apiKey: 'dummy-key',
+  model: 'deepseek-chat'
+})
 
 // 获取可用工具
 const availableTools = computed(() => {
@@ -344,75 +412,14 @@ const sendMessage = async () => {
   // 构建工具列表
   const tools = buildEnabledTools()
   
-  // 如果有启用的工具，使用工具调用API
-  if (tools.length > 0) {
-    await handleMessageWithTools(message, tools)
-  } else {
-    // 没有工具，使用流式API
-    await handleMessageWithStream(message)
-  }
+  // 统一使用流式处理
+  await handleMessageStream(message, tools)
 }
 
-// 使用流式API发送消息
-const handleMessageWithStream = async (message: string) => {
-  // 构建对话历史
-  const conversationHistory: any[] = []
-  
-  for (const msg of messages.value) {
-    if (msg.type === 'user') {
-      conversationHistory.push({
-        role: 'user',
-        content: msg.content
-      })
-    } else if (msg.type === 'ai' && msg.content) {
-      conversationHistory.push({
-        role: 'assistant',
-        content: msg.content
-      })
-    }
-  }
-
-  // 创建AI消息占位符
-  const aiMessage: Message = {
-    id: (Date.now() + 1).toString(),
-    type: 'ai',
-    content: '',
-    timestamp: new Date()
-  }
-  messages.value.push(aiMessage)
-  scrollToBottom()
-
-  // 使用流式API
-  sendMessageStream(
-    message,
-    conversationHistory.slice(0, -1), // 排除刚添加的用户消息
-    // onChunk: 每次收到内容片段时调用
-    (chunk: string) => {
-      const lastMessage = messages.value[messages.value.length - 1]
-      if (lastMessage && lastMessage.type === 'ai') {
-        lastMessage.content += chunk
-        scrollToBottom()
-      }
-    },
-    // onComplete: 流式完成时调用
-    () => {
-      scrollToBottom()
-    },
-    // onError: 出错时调用
-    (error: string) => {
-      const lastMessage = messages.value[messages.value.length - 1]
-      if (lastMessage && lastMessage.type === 'ai') {
-        lastMessage.content = `错误: ${error}`
-      }
-      scrollToBottom()
-    }
-  )
-}
-
-// 使用工具调用API发送消息
-const handleMessageWithTools = async (message: string, tools: any[]) => {
+// 统一的流式消息处理函数
+const handleMessageStream = async (message: string, tools: any[] = []) => {
   try {
-    // 构建完整的对话历史 (包括工具调用)
+    // 构建完整的对话历史
     const conversationHistory: any[] = []
     
     for (const msg of messages.value) {
@@ -447,83 +454,197 @@ const handleMessageWithTools = async (message: string, tools: any[]) => {
       }
     }
 
-    // 发送请求
-    const result = await sendMessageWithTools(message, tools, conversationHistory.slice(0, -1))
-    
-    // 处理响应
-    const choice = result.choices[0]
-    const responseMessage = choice.message
-    
-    // 如果有工具调用，执行工具并继续对话
-    if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
-      // 创建带工具调用的AI消息
-      const aiMessageWithTools: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'ai',
-        content: responseMessage.content || '',
-        toolCalls: responseMessage.tool_calls,
-        timestamp: new Date()
-      }
-      
-      messages.value.push(aiMessageWithTools)
-      scrollToBottom()
-      
-      // 执行所有工具调用
-      const toolResults = []
-      for (const toolCall of responseMessage.tool_calls) {
-        const toolResult = await executeToolCall(toolCall)
-        toolResults.push({
-          tool_call_id: toolCall.id,
-          content: toolResult
-        })
-      }
-      
-      // 保存工具结果到消息中
-      aiMessageWithTools.toolResults = toolResults
-      
-      // 构建包含工具结果的新对话历史
-      const newConversationHistory = [...conversationHistory]
-      newConversationHistory.push({
-        role: 'assistant',
-        content: responseMessage.content,
-        tool_calls: responseMessage.tool_calls
-      })
-      
-      for (const result of toolResults) {
-        newConversationHistory.push({
-          role: 'tool',
-          tool_call_id: result.tool_call_id,
-          content: result.content
-        })
-      }
-      
-      // 发送第二次请求获取最终回复
-      const finalResult = await sendMessageWithTools('', tools, newConversationHistory)
-      const finalChoice = finalResult.choices[0]
-      
-      // 创建最终AI回复
-      const finalAiMessage: Message = {
-        id: (Date.now() + 2).toString(),
-        type: 'ai',
-        content: finalChoice.message.content || '处理完成',
-        timestamp: new Date()
-      }
-      
-      messages.value.push(finalAiMessage)
-      scrollToBottom()
-      
-    } else {
-      // 没有工具调用，直接显示回复
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'ai',
-        content: responseMessage.content || '收到回复',
-        timestamp: new Date()
-      }
-      
-      messages.value.push(aiMessage)
-      scrollToBottom()
+    // 创建AI消息占位符
+    const aiMessage: Message = {
+      id: (Date.now() + 1).toString(),
+      type: 'ai',
+      content: '',
+      timestamp: new Date()
     }
+    messages.value.push(aiMessage)
+    scrollToBottom()
+
+    // 使用流式API，传递工具参数
+    const streamConfig = {
+      model: apiStore.apiConfig.model,
+      messages: [
+        ...conversationHistory.slice(0, -1), // 排除刚添加的用户消息
+        { role: 'user', content: message }
+      ],
+      stream: true,
+      temperature: 0.7,
+      max_tokens: 2000,
+      // 如果有工具，添加工具参数
+      ...(tools.length > 0 && { tools })
+    }
+
+    console.log('🌊 开始流式处理:', { hasTools: tools.length > 0, toolsCount: tools.length })
+
+    // 流式处理状态
+    let currentToolCalls: any[] = []
+    let hasReceivedContent = false
+
+    await apiStore.streamChat(
+      streamConfig,
+      // onChunk: 每次收到内容片段时调用
+      (chunk: any) => {
+        const lastMessage = messages.value[messages.value.length - 1]
+        if (!lastMessage || lastMessage.type !== 'ai') return
+
+        // 处理内容流
+        if (chunk.choices?.[0]?.delta?.content) {
+          const content = chunk.choices[0].delta.content
+          lastMessage.content += content
+          hasReceivedContent = true
+          scrollToBottom()
+        }
+
+        // 处理工具调用流
+        if (chunk.choices?.[0]?.delta?.tool_calls) {
+          const toolCalls = chunk.choices[0].delta.tool_calls
+          
+          for (const toolCall of toolCalls) {
+            const index = toolCall.index
+            
+            // 初始化工具调用
+            if (!currentToolCalls[index]) {
+              currentToolCalls[index] = {
+                id: toolCall.id || `tool_${index}_${Date.now()}`,
+                type: 'function',
+                function: {
+                  name: toolCall.function?.name || '',
+                  arguments: toolCall.function?.arguments || ''
+                }
+              }
+            } else {
+              // 累积工具调用参数
+              if (toolCall.function?.arguments) {
+                currentToolCalls[index].function.arguments += toolCall.function.arguments
+              }
+            }
+          }
+          
+          // 更新消息中的工具调用
+          lastMessage.toolCalls = [...currentToolCalls]
+          scrollToBottom()
+        }
+      },
+      // onComplete: 流式完成时调用
+      async () => {
+        const lastMessage = messages.value[messages.value.length - 1]
+        if (!lastMessage || lastMessage.type !== 'ai') return
+
+        // 如果有工具调用，执行工具并继续对话
+        if (currentToolCalls.length > 0) {
+          console.log('🔧 检测到工具调用，开始执行:', currentToolCalls)
+          
+          // 执行所有工具调用
+          const toolResults = []
+          for (const toolCall of currentToolCalls) {
+            try {
+              const toolResult = await executeToolCall(toolCall)
+              toolResults.push({
+                tool_call_id: toolCall.id,
+                content: toolResult
+              })
+              console.log(`✅ 工具调用成功: ${toolCall.function.name}`)
+            } catch (error) {
+              console.error(`❌ 工具调用失败: ${toolCall.function.name}`, error)
+              toolResults.push({
+                tool_call_id: toolCall.id,
+                content: `工具调用失败: ${error instanceof Error ? error.message : '未知错误'}`
+              })
+            }
+          }
+          
+          // 保存工具结果到消息中
+          lastMessage.toolResults = toolResults
+          
+          // 构建包含工具结果的新对话历史
+          const newConversationHistory = [...conversationHistory]
+          newConversationHistory.push({
+            role: 'assistant',
+            content: lastMessage.content,
+            tool_calls: currentToolCalls
+          })
+          
+          for (const result of toolResults) {
+            newConversationHistory.push({
+              role: 'tool',
+              tool_call_id: result.tool_call_id,
+              content: result.content
+            })
+          }
+          
+          // 创建新的AI回复消息
+          const finalAiMessage: Message = {
+            id: (Date.now() + 2).toString(),
+            type: 'ai',
+            content: '',
+            timestamp: new Date()
+          }
+          
+          messages.value.push(finalAiMessage)
+          scrollToBottom()
+          
+          // 流式获取最终回复
+          const finalStreamConfig = {
+            model: apiStore.apiConfig.model,
+            messages: newConversationHistory,
+            stream: true,
+            temperature: 0.7,
+            max_tokens: 2000,
+            tools
+          }
+          
+          console.log('🌊 获取工具调用后的最终回复')
+          
+          await apiStore.streamChat(
+            finalStreamConfig,
+            // onChunk
+            (chunk: any) => {
+              const finalMessage = messages.value[messages.value.length - 1]
+              if (finalMessage && finalMessage.type === 'ai') {
+                if (chunk.choices?.[0]?.delta?.content) {
+                  finalMessage.content += chunk.choices[0].delta.content
+                  scrollToBottom()
+                }
+              }
+            },
+            // onComplete
+            () => {
+              console.log('✅ 最终回复完成')
+              scrollToBottom()
+            },
+            // onError
+            (error: string) => {
+              console.error('❌ 获取最终回复失败:', error)
+              const finalMessage = messages.value[messages.value.length - 1]
+              if (finalMessage && finalMessage.type === 'ai') {
+                finalMessage.content = `获取最终回复失败: ${error}`
+              }
+              scrollToBottom()
+            }
+          )
+          
+        } else {
+          console.log('✅ 流式处理完成（无工具调用）')
+        }
+        
+        scrollToBottom()
+      },
+      // onError: 出错时调用
+      (error: string) => {
+        console.error('❌ 流式处理失败:', error)
+        const lastMessage = messages.value[messages.value.length - 1]
+        if (lastMessage && lastMessage.type === 'ai') {
+          lastMessage.content = hasReceivedContent ? 
+            `${lastMessage.content}\n\n错误: ${error}` : 
+            `错误: ${error}`
+        }
+        scrollToBottom()
+      }
+    )
     
   } catch (error) {
     console.error('发送消息失败:', error)
@@ -555,10 +676,27 @@ const scrollToBottom = () => {
   })
 }
 
+// API配置管理
+const updateApiConfig = () => {
+  apiStore.updateApiConfig(tempApiConfig.value)
+  showApiConfig.value = false
+}
+
+const resetApiConfig = () => {
+  tempApiConfig.value = {
+    baseURL: 'http://localhost:8000/v1',
+    apiKey: 'dummy-key',
+    model: 'deepseek-chat'
+  }
+  apiStore.updateApiConfig(tempApiConfig.value)
+}
+
 onMounted(async () => {
   await connect()
   // 初始化工具状态
   initializeToolsState()
+  // 初始化API配置
+  tempApiConfig.value = apiStore.getApiConfig()
 })
 
 onUnmounted(() => {

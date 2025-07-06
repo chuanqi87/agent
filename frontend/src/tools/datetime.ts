@@ -1,12 +1,12 @@
 import type { ToolExecutor } from '../utils/tools'
+import { createParameterSchema } from '../utils/tools'
 
-// 日期时间工具
+// 日期时间工具 - 符合OpenAI标准
 export const datetimeTool: ToolExecutor = {
-  name: 'get_current_time',
-  description: '获取当前的日期和时间信息',
-  parameters: {
-    type: 'object',
-    properties: {
+  definition: {
+    name: 'get_current_time',
+    description: '获取当前的日期和时间信息，支持多种格式和时区',
+    parameters: createParameterSchema({
       format: {
         type: 'string',
         description: '时间格式，可选值：datetime（日期时间）、date（仅日期）、time（仅时间）、timestamp（时间戳）',
@@ -14,13 +14,13 @@ export const datetimeTool: ToolExecutor = {
       },
       timezone: {
         type: 'string',
-        description: '时区，例如：Asia/Shanghai、UTC、America/New_York'
+        description: '时区，例如：Asia/Shanghai、UTC、America/New_York，默认为Asia/Shanghai'
       }
-    }
+    })
   },
   
-  async execute(args: { format?: string; timezone?: string }): Promise<string> {
-    const { format = 'datetime', timezone = 'Asia/Shanghai' } = args
+  async execute(parameters: Record<string, any>): Promise<string> {
+    const { format = 'datetime', timezone = 'Asia/Shanghai' } = parameters
     
     try {
       const now = new Date()
@@ -67,13 +67,12 @@ export const datetimeTool: ToolExecutor = {
   isEnabled: () => true
 }
 
-// 时间计算工具
+// 时间计算工具 - 符合OpenAI标准
 export const timeCalculatorTool: ToolExecutor = {
-  name: 'calculate_time',
-  description: '计算时间差或时间加减运算',
-  parameters: {
-    type: 'object',
-    properties: {
+  definition: {
+    name: 'calculate_time',
+    description: '计算时间差或时间加减运算，支持多种时间单位和操作',
+    parameters: createParameterSchema({
       operation: {
         type: 'string',
         description: '操作类型：add（加）、subtract（减）、diff（计算差值）',
@@ -81,11 +80,11 @@ export const timeCalculatorTool: ToolExecutor = {
       },
       base_time: {
         type: 'string',
-        description: '基准时间，格式：YYYY-MM-DD HH:mm:ss 或 now（当前时间）'
+        description: '基准时间，格式：YYYY-MM-DD HH:mm:ss 或 now（当前时间），默认为now'
       },
       amount: {
         type: 'number',
-        description: '时间数量'
+        description: '时间数量（仅用于add和subtract操作）'
       },
       unit: {
         type: 'string',
@@ -96,18 +95,17 @@ export const timeCalculatorTool: ToolExecutor = {
         type: 'string',
         description: '目标时间（仅用于diff操作），格式：YYYY-MM-DD HH:mm:ss'
       }
-    },
-    required: ['operation']
+    }, ['operation'])
   },
   
-  async execute(args: { 
-    operation: string
-    base_time?: string
-    amount?: number
-    unit?: string
-    target_time?: string
-  }): Promise<string> {
-    const { operation, base_time = 'now', amount = 0, unit = 'days', target_time } = args
+  async execute(parameters: Record<string, any>): Promise<string> {
+    const { 
+      operation, 
+      base_time = 'now', 
+      amount = 0, 
+      unit = 'days', 
+      target_time 
+    } = parameters
     
     try {
       // 解析基准时间
