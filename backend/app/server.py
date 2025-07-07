@@ -3,22 +3,21 @@
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 import json
 import asyncio
-
-# langserve imports
-from langserve import add_routes
-
-from .agent import ChatAgent
+import time
+import uuid
+from typing import Dict, Any, List, Optional
 from .config import get_settings
+from .passthrough_agent import DirectAgent
 
 # 创建FastAPI应用
 app = FastAPI(
-    title="AI Agent API (LangServe + OpenAI Compatible)",
-    description="基于LangServe的AI Agent聊天服务，完全兼容OpenAI API协议",
+    title="AI Agent API (Direct Passthrough)",
+    description="直接透传消息给大模型的简化AI Agent",
     version="1.0.0",
-    docs_url=None,  # 禁用文档以避免OpenAPI schema问题
+    docs_url=None,
     redoc_url=None,
     servers=[
         {"url": "http://localhost:8000", "description": "本地开发服务器"},
@@ -26,53 +25,42 @@ app = FastAPI(
 )
 
 # 配置CORS
-settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 开发环境允许所有来源
-    allow_credentials=False,  # 当allow_origins为*时，必须设为False
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 创建聊天代理实例
-print("🚀 正在初始化 AI Agent...")
+# 获取配置
+settings = get_settings()
+model_config = settings.get_active_model_config()
+
+print(f"🚀 初始化透传Agent - {model_config['provider'].upper()} {model_config['model']}")
+print(f"📡 API Base URL: {model_config['base_url']}")
+print(f"🔑 API Key: {'*' * 10 + model_config['api_key'][-4:] if model_config['api_key'] else 'NOT SET'}")
+
+# 创建透传代理实例
 try:
-    chat_agent = ChatAgent()
-    print("✅ AI Agent 初始化成功")
+    agent = DirectAgent()
+    print("✅ 透传Agent初始化成功")
 except Exception as e:
-    print(f"❌ AI Agent 初始化失败: {e}")
-    chat_agent = None
-
-# 获取LangChain链
-chain = chat_agent.get_chain() if chat_agent else None
-
-# 使用langserve添加OpenAI兼容的路由
-if chain:
-    print("🔗 正在添加 LangServe 路由...")
-    
-    # 添加聊天完成端点 (简化配置)
-    add_routes(
-        app,
-        chain,
-        path="/v1/chat/completions",
-        enable_feedback_endpoint=False,
-        enable_public_trace_link_endpoint=False
-    )
-    
-    print("✅ LangServe 路由添加成功")
-else:
-    print("❌ 无法添加 LangServe 路由，Agent 初始化失败")
+    print(f"❌ 透传Agent初始化失败: {e}")
+    agent = None
 
 @app.get("/")
 async def root():
     """根路径信息"""
+    print("📍 访问根路径")
     return {
         "status": "ok",
-        "service": "AI Agent Backend (LangServe)",
+        "service": "AI Agent Backend (Direct Passthrough)",
         "version": "1.0.0",
+        "provider": model_config["provider"],
+        "model": model_config["model"],
         "endpoints": {
-            "health": "/health", 
+            "health": "/health",
             "models": "/v1/models",
             "chat": "/v1/chat/completions"
         }
@@ -81,206 +69,169 @@ async def root():
 @app.get("/health")
 async def health_check():
     """健康检查接口"""
+    print("🏥 健康检查请求")
     return {
         "status": "healthy",
-        "service": "AI Agent Backend (LangServe)",
+        "service": "AI Agent Backend (Direct Passthrough)",
         "version": "1.0.0",
-        "framework": "LangChain + LangServe",
-        "agent_available": chat_agent is not None,
-        "provider": chat_agent.get_model_info()["provider"] if chat_agent else "unknown",
-        "model": chat_agent.get_model_info()["model"] if chat_agent else "unknown"
+        "agent_available": agent is not None,
+        "provider": model_config["provider"],
+        "model": model_config["model"]
     }
 
-async def generate_stream_response(user_input: str, model_info: dict, tools: list = None):
-    """生成流式响应，支持工具调用"""
-    try:
-        chat_id = f"chatcmpl-{__import__('uuid').uuid4().hex[:8]}"
-        created_time = int(__import__('time').time())
-        
-        # 发送开始chunk
-        yield f"data: {json.dumps({'id': chat_id, 'object': 'chat.completion.chunk', 'created': created_time, 'model': model_info['model'], 'choices': [{'index': 0, 'delta': {'role': 'assistant'}, 'finish_reason': None}]})}\n\n"
-        
-        # 调用agent链
-        chain = chat_agent.get_chain()
-        result = await chain.ainvoke({"input": user_input})
-        
-        response_content = result.get("output", "")
-        
-        # 检查是否有工具调用（通过检查agent的中间步骤）
-        intermediate_steps = result.get("intermediate_steps", [])
-        
-        if intermediate_steps:
-            # 有工具调用，发送工具调用chunks
-            for step in intermediate_steps:
-                action, observation = step
-                if hasattr(action, 'tool') and hasattr(action, 'tool_input'):
-                    # 发送工具调用chunk
-                    tool_call_chunk = {
-                        "id": chat_id,
-                        "object": "chat.completion.chunk",
-                        "created": created_time,
-                        "model": model_info["model"],
-                        "choices": [{
-                            "index": 0,
-                            "delta": {
-                                "tool_calls": [{
-                                    "index": 0,
-                                    "id": f"call_{__import__('uuid').uuid4().hex[:8]}",
-                                    "type": "function",
-                                    "function": {
-                                        "name": action.tool,
-                                        "arguments": json.dumps(action.tool_input)
-                                    }
-                                }]
-                            },
-                            "finish_reason": None
-                        }]
-                    }
-                    yield f"data: {json.dumps(tool_call_chunk)}\n\n"
-                    await asyncio.sleep(0.05)
-        
-        # 发送响应内容chunks
-        if response_content:
-            # 按字符分割实现真正的流式效果
-            for i, char in enumerate(response_content):
-                chunk_data = {
-                    "id": chat_id,
-                    "object": "chat.completion.chunk",
-                    "created": created_time,
-                    "model": model_info["model"],
-                    "choices": [{
-                        "index": 0,
-                        "delta": {"content": char},
-                        "finish_reason": None
-                    }]
-                }
-                yield f"data: {json.dumps(chunk_data)}\n\n"
-                await asyncio.sleep(0.01)  # 打字效果
-        
-        # 发送结束chunk
-        end_chunk = {
-            "id": chat_id,
-            "object": "chat.completion.chunk",
-            "created": created_time,
-            "model": model_info["model"],
-            "choices": [{
-                "index": 0,
-                "delta": {},
-                "finish_reason": "tool_calls" if intermediate_steps else "stop"
-            }]
-        }
-        yield f"data: {json.dumps(end_chunk)}\n\n"
-        yield "data: [DONE]\n\n"
-        
-    except Exception as e:
-        print(f"❌ 流式响应生成错误: {e}")
-        error_chunk = {
-            "id": f"chatcmpl-{__import__('uuid').uuid4().hex[:8]}",
-            "object": "chat.completion.chunk",
-            "created": int(__import__('time').time()),
-            "model": model_info.get("model", "unknown"),
-            "choices": [{
-                "index": 0,
-                "delta": {"content": f"错误: {str(e)}"},
-                "finish_reason": "stop"
-            }]
-        }
-        yield f"data: {json.dumps(error_chunk)}\n\n"
-        yield "data: [DONE]\n\n"
-
 @app.post("/v1/chat/completions")
-async def openai_chat_completions(request: dict):
-    """OpenAI兼容的聊天完成端点，支持流式和非流式"""
-    if not chat_agent:
+async def chat_completions(request: Request):
+    """OpenAI兼容的聊天完成端点，完全透传"""
+    request_id = str(uuid.uuid4())[:8]
+    client_ip = request.client.host if request.client else "unknown"
+    
+    print(f"\n🚀 [{request_id}] 收到聊天完成请求")
+    print(f"🌐 [{request_id}] 客户端IP: {client_ip}")
+    print(f"📋 [{request_id}] 请求头: {dict(request.headers)}")
+    
+    if not agent:
+        print(f"❌ [{request_id}] Agent未初始化")
         return {"error": "Agent not initialized"}
     
     try:
-        # 提取参数
-        messages = request.get("messages", [])
+        # 获取请求数据
+        request_data = await request.json()
+        print(f"📦 [{request_id}] 请求数据大小: {len(json.dumps(request_data))} 字符")
+        
+        # 提取基本参数
+        messages = request_data.get("messages", [])
         if not messages:
+            print(f"❌ [{request_id}] 缺少messages参数")
             return {"error": "Messages are required"}
         
-        stream = request.get("stream", False)
-        user_input = messages[-1].get("content", "")
-        model_info = chat_agent.get_model_info()
+        stream = request_data.get("stream", False)
+        tools = request_data.get("tools")
+        
+        # 打印请求摘要
+        print(f"📝 [{request_id}] 消息数量: {len(messages)}")
+        print(f"🔧 [{request_id}] 工具数量: {len(tools) if tools else 0}")
+        print(f"🌊 [{request_id}] 流式模式: {stream}")
+        
+        # 打印每条消息的基本信息
+        for i, msg in enumerate(messages):
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            content_preview = content[:50] + "..." if len(content) > 50 else content
+            print(f"💬 [{request_id}] 消息{i+1}: {role} - {content_preview}")
+        
+        # 提取其他参数（全部透传）
+        other_params = {k: v for k, v in request_data.items() 
+                       if k not in ["messages", "stream", "tools"]}
+        
+        if other_params:
+            print(f"⚙️  [{request_id}] 其他参数: {other_params}")
         
         # 流式响应
         if stream:
-            tools = request.get("tools", [])
+            print(f"🌊 [{request_id}] 开始流式响应")
+            
+            async def stream_generator():
+                """流式数据生成器"""
+                try:
+                    chunk_sent_count = 0
+                    async for chunk in agent.stream_chat(messages, tools, **other_params):
+                        chunk_sent_count += 1
+                        # 每100个chunk打印一次发送进度
+                        if chunk_sent_count % 100 == 0:
+                            print(f"📡 [{request_id}] 已发送 {chunk_sent_count} 个chunk到前端")
+                        yield chunk
+                    print(f"✅ [{request_id}] 流式响应发送完成，共发送 {chunk_sent_count} 个chunk")
+                except Exception as e:
+                    print(f"❌ [{request_id}] 流式生成器异常: {str(e)}")
+                    # 发送错误信息
+                    error_chunk = {
+                        "id": f"chatcmpl-{request_id}",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": model_config["model"],
+                        "choices": [{
+                            "index": 0,
+                            "delta": {"content": f"错误: {str(e)}"},
+                            "finish_reason": "stop"
+                        }]
+                    }
+                    yield f"data: {json.dumps(error_chunk)}\n\n"
+                    yield "data: [DONE]\n\n"
+            
             return StreamingResponse(
-                generate_stream_response(user_input, model_info, tools),
-                media_type="text/event-stream"
+                stream_generator(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",
+                    "X-Request-ID": request_id,
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type, Authorization"
+                }
             )
         
         # 非流式响应
-        chain = chat_agent.get_chain()
-        result = await chain.ainvoke({"input": user_input})
+        print(f"📝 [{request_id}] 开始非流式响应")
+        result = await agent.chat(messages, tools, **other_params)
         
-        return {
-            "id": f"chatcmpl-{__import__('uuid').uuid4().hex[:8]}",
-            "object": "chat.completion",
-            "created": int(__import__('time').time()),
-            "model": model_info["model"],
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": result.get("output", "")
-                },
-                "finish_reason": "stop"
-            }],
-            "usage": {
-                "prompt_tokens": 0,
-                "completion_tokens": 0,
-                "total_tokens": 0
-            }
-        }
+        print(f"✅ [{request_id}] 请求处理完成")
+        return result
         
+    except json.JSONDecodeError as e:
+        print(f"❌ [{request_id}] JSON解析错误: {str(e)}")
+        return {"error": f"JSON解析失败: {str(e)}"}
     except Exception as e:
-        print(f"❌ 聊天完成错误: {e}")
+        print(f"❌ [{request_id}] 聊天完成错误: {str(e)}")
         return {"error": f"聊天完成失败: {str(e)}"}
 
 @app.get("/v1/models")
 async def list_models():
     """获取可用模型列表 (OpenAI兼容)"""
-    if not chat_agent:
-        return {"error": "Agent not initialized"}
-    
-    model_info = chat_agent.get_model_info()
-    provider = model_info["provider"]
-    model_name = model_info["model"]
-    
-    # 返回OpenAI兼容的模型列表
+    print("📋 获取模型列表请求")
     return {
         "object": "list",
         "data": [
             {
-                "id": model_name,
+                "id": model_config["model"],
                 "object": "model",
                 "created": 1677610602,
-                "owned_by": provider,
+                "owned_by": model_config["provider"],
                 "permission": [],
-                "root": model_name,
+                "root": model_config["model"],
                 "parent": None,
             }
         ]
     }
 
-
-
-# 中间件：添加LangServe相关的头部信息
 @app.middleware("http")
-async def add_langserve_headers(request: Request, call_next):
-    """添加LangServe相关头部信息"""
+async def add_headers(request: Request, call_next):
+    """添加响应头和请求日志"""
+    start_time = time.time()
+    
+    # 记录请求开始
+    print(f"📥 请求开始: {request.method} {request.url}")
+    
     response = await call_next(request)
     
-    # 添加服务识别头部
-    response.headers["X-Powered-By"] = "LangServe"
+    # 记录请求结束
+    process_time = time.time() - start_time
+    print(f"📤 请求结束: {request.method} {request.url} - {response.status_code} - {process_time:.2f}s")
+    
+    response.headers["X-Powered-By"] = "Direct-Passthrough-Agent"
     response.headers["X-Agent-Version"] = "1.0.0"
+    response.headers["X-Process-Time"] = str(process_time)
     
     return response
 
-# 导出应用实例
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭时的清理操作"""
+    if agent:
+        await agent.close()
+        print("🔒 应用关闭，Agent资源已清理")
+
 def create_app():
     """创建应用实例"""
     return app 
