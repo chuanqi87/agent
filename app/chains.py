@@ -68,6 +68,7 @@ class AgentChain:
 4. 提供清晰、有用的回答
 """),
             MessagesPlaceholder(variable_name="messages"),
+            MessagesPlaceholder(variable_name="agent_scratchpad"),
         ])
         
         # 获取工具列表

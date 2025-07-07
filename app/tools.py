@@ -8,8 +8,8 @@ import datetime
 
 class CalculatorTool(BaseTool):
     """简单的计算器工具"""
-    name = "calculator"
-    description = "用于执行数学计算的工具。输入应该是有效的数学表达式。"
+    name: str = "calculator"
+    description: str = "用于执行数学计算的工具。输入应该是有效的数学表达式。"
     
     def _run(self, query: str) -> str:
         """执行数学计算"""
@@ -34,8 +34,8 @@ class CalculatorTool(BaseTool):
 
 class CurrentTimeTool(BaseTool):
     """获取当前时间的工具"""
-    name = "current_time"
-    description = "获取当前的日期和时间"
+    name: str = "current_time"
+    description: str = "获取当前的日期和时间"
     
     def _run(self, query: str = "") -> str:
         """获取当前时间"""
@@ -48,8 +48,8 @@ class CurrentTimeTool(BaseTool):
 
 class WeatherTool(BaseTool):
     """天气查询工具（示例）"""
-    name = "weather"
-    description = "查询指定城市的天气信息。输入应该是城市名称。"
+    name: str = "weather"
+    description: str = "查询指定城市的天气信息。输入应该是城市名称。"
     
     def _run(self, city: str) -> str:
         """查询天气"""
@@ -66,8 +66,8 @@ class WeatherTool(BaseTool):
 
 class WebSearchTool(BaseTool):
     """网络搜索工具（示例）"""
-    name = "web_search"
-    description = "在互联网上搜索信息。输入应该是搜索关键词。"
+    name: str = "web_search"
+    description: str = "在互联网上搜索信息。输入应该是搜索关键词。"
     
     def _run(self, query: str) -> str:
         """执行网络搜索"""
